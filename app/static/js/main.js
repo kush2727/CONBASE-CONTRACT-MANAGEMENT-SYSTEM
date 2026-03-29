@@ -26,20 +26,58 @@ document.addEventListener('DOMContentLoaded', () => {
     const sidebar         = document.querySelector('.sidebar');
     const sidebarOverlay  = document.getElementById('sidebarOverlay');
 
+    // ── Local Storage Manager ─────────────────────────────────────────
+    const Storage = {
+        KEY: 'conbase_contracts_v1',
+        getAll() {
+            return JSON.parse(localStorage.getItem(this.KEY) || '[]');
+        },
+        saveAll(contracts) {
+            localStorage.setItem(this.KEY, JSON.stringify(contracts));
+        },
+        add(contract) {
+            const all = this.getAll();
+            contract.id = Date.now(); // Simple unique ID
+            contract.created_at = new Date().toISOString();
+            all.unshift(contract);
+            this.saveAll(all);
+            return contract;
+        },
+        update(id, data) {
+            const all = this.getAll();
+            const idx = all.findIndex(c => c.id == id);
+            if (idx !== -1) {
+                all[idx] = { ...all[idx], ...data };
+                this.saveAll(all);
+                return all[idx];
+            }
+            return null;
+        },
+        delete(id) {
+            const all = this.getAll().filter(c => c.id != id);
+            this.saveAll(all);
+        }
+    };
+
     // ── State ────────────────────────────────────────────────────────
     let currentStatusFilter = '';
     let currentSearchQuery  = '';
     let isExpiringSoonView  = false;
-    let allContracts        = [];
+    let allContractsCached  = [];
     let statusChart         = null;
 
     // ── Init ─────────────────────────────────────────────────────────
-    fetchContracts();
-    fetchStats();
+    refreshUI();
 
     // ── Modal helpers ─────────────────────────────────────────────────
     function openModal(modal)  { modal.classList.add('active'); }
     function closeModal(modal) { modal.classList.remove('active'); }
+
+    document.querySelectorAll('.close-btn').forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll('.modal').forEach(m => closeModal(m));
+        };
+    });
 
     // ── Mobile Navigation ─────────────────────────────────────────────
     if (mobileMenuBtn) {
@@ -56,49 +94,39 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    document.querySelectorAll('.close-btn').forEach(btn => {
-        btn.onclick = () => {
-            document.querySelectorAll('.modal').forEach(m => closeModal(m));
-        };
-    });
-
     // ── Sidebar Navigation ────────────────────────────────────────────
     function setActiveNav(el) {
         navItems.forEach(i => i.classList.remove('active'));
         el.classList.add('active');
+        sidebar.classList.remove('active');
+        sidebarOverlay.classList.remove('active');
     }
 
     document.getElementById('navDashboard').onclick = (e) => {
         e.preventDefault();
         setActiveNav(e.currentTarget);
-        sidebar.classList.remove('active');
-        sidebarOverlay.classList.remove('active');
         currentStatusFilter = '';
         isExpiringSoonView  = false;
         viewTitle.textContent = 'Contract Dashboard';
-        fetchContracts();
+        refreshUI();
     };
 
     document.getElementById('navAllContracts').onclick = (e) => {
         e.preventDefault();
         setActiveNav(e.currentTarget);
-        sidebar.classList.remove('active');
-        sidebarOverlay.classList.remove('active');
         currentStatusFilter = '';
         isExpiringSoonView  = false;
         viewTitle.textContent = 'All Contracts';
-        fetchContracts();
+        refreshUI();
     };
 
     document.getElementById('navExpiringSoon').onclick = (e) => {
         e.preventDefault();
         setActiveNav(e.currentTarget);
-        sidebar.classList.remove('active');
-        sidebarOverlay.classList.remove('active');
         currentStatusFilter = 'Active';
         isExpiringSoonView  = true;
         viewTitle.textContent = 'Contracts Expiring Soon';
-        fetchContracts();
+        refreshUI();
     };
 
     // ── Status Filter Buttons ─────────────────────────────────────────
@@ -108,20 +136,20 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.classList.add('active');
             currentStatusFilter = btn.dataset.status;
             isExpiringSoonView  = false;
-            fetchContracts();
+            refreshUI();
         };
     });
 
     // ── Search ────────────────────────────────────────────────────────
     searchInput.oninput = (e) => {
-        currentSearchQuery = e.target.value;
-        fetchContracts();
+        currentSearchQuery = e.target.value.toLowerCase();
+        refreshUI();
     };
 
     // ── Sorting & Date Filters ────────────────────────────────────────
-    sortSelect.onchange  = () => fetchContracts();
-    startFrom.onchange   = () => fetchContracts();
-    endTo.onchange       = () => fetchContracts();
+    sortSelect.onchange  = () => refreshUI();
+    startFrom.onchange   = () => refreshUI();
+    endTo.onchange       = () => refreshUI();
 
     // ── Upload Modal ──────────────────────────────────────────────────
     uploadBtn.onclick = () => openModal(uploadModal);
@@ -136,198 +164,129 @@ document.addEventListener('DOMContentLoaded', () => {
 
     uploadForm.onsubmit = async (e) => {
         e.preventDefault();
-        const formData = new FormData(uploadForm);
+        const file = fileInput.files[0];
+        if (!file) return;
 
-        try {
-            const res  = await fetch('/contracts', { method: 'POST', body: formData });
-            const data = await res.json();
+        Toast.show('Processing document...', 'info');
 
-            if (res.ok) {
-                closeModal(uploadModal);
-                uploadForm.reset();
-                fileNameDisplay.textContent = '';
-                dropZone.classList.remove('has-file');
-                fetchContracts();
-                fetchStats();
-                Toast.show('Contract created successfully!', 'success');
-            } else {
-                Toast.show(data.error || 'Upload failed', 'error');
-            }
-        } catch (err) {
-            console.error(err);
-            Toast.show('An error occurred during upload', 'error');
-        }
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const contract = {
+                contract_name: uploadForm.contract_name.value,
+                party_name:    uploadForm.party_name.value,
+                start_date:    uploadForm.start_date.value,
+                end_date:      uploadForm.end_date.value,
+                file_data:     event.target.result, // Base64
+                file_name:     file.name,
+                status:        computeStatus(uploadForm.end_date.value),
+                signature_data: null
+            };
+
+            Storage.add(contract);
+            closeModal(uploadModal);
+            uploadForm.reset();
+            fileNameDisplay.textContent = '';
+            dropZone.classList.remove('has-file');
+            refreshUI();
+            Toast.show('Contract created successfully!', 'success');
+        };
+        reader.readAsDataURL(file);
     };
 
     // ── Edit Modal ────────────────────────────────────────────────────
-    editForm.onsubmit = async (e) => {
+    editForm.onsubmit = (e) => {
         e.preventDefault();
         const id = document.getElementById('editContractId').value;
+        const endDate = document.getElementById('editEndDate').value;
         const payload = {
             contract_name: document.getElementById('editName').value,
             party_name:    document.getElementById('editPartyName').value,
             start_date:    document.getElementById('editStartDate').value,
-            end_date:      document.getElementById('editEndDate').value,
+            end_date:      endDate,
+            status:        computeStatus(endDate)
         };
 
-        try {
-            const res = await fetch(`/contracts/${id}`, {
-                method:  'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify(payload),
-            });
-
-            if (res.ok) {
-                closeModal(editModal);
-                fetchContracts();
-                fetchStats();
-                Toast.show('Contract updated successfully!', 'success');
-            } else {
-                const data = await res.json();
-                Toast.show(data.error || 'Update failed', 'error');
-            }
-        } catch (err) {
-            console.error(err);
-            Toast.show('An error occurred during update', 'error');
-        }
+        Storage.update(id, payload);
+        closeModal(editModal);
+        refreshUI();
+        Toast.show('Contract updated successfully!', 'success');
     };
 
-    // ── Export CSV ────────────────────────────────────────────────────
-    exportCsvBtn.onclick = () => {
-        if (allContracts.length === 0) {
-            Toast.show('No data to export', 'warning');
+    // ── UI Refresh Logic ──────────────────────────────────────────────
+    function refreshUI() {
+        const contracts = Storage.getAll();
+        
+        // Apply Filter Logic
+        let filtered = contracts.filter(c => {
+            const matchesSearch = c.contract_name.toLowerCase().includes(currentSearchQuery) || 
+                                  c.party_name.toLowerCase().includes(currentSearchQuery);
+            const matchesStatus = currentStatusFilter === '' || c.status === currentStatusFilter;
+            
+            // Date range filter
+            const startDateObj = c.start_date ? new Date(c.start_date) : null;
+            const endDateObj   = c.end_date ? new Date(c.end_date) : null;
+            const filterStart  = startFrom.value ? new Date(startFrom.value) : null;
+            const filterEnd    = endTo.value ? new Date(endTo.value) : null;
+            
+            const matchesStart = !filterStart || (startDateObj && startDateObj >= filterStart);
+            const matchesEnd   = !filterEnd || (endDateObj && endDateObj <= filterEnd);
+
+            // Expiring Soon logic (Manual calc since no backend)
+            let matchesExpiring = true;
+            if (isExpiringSoonView) {
+                const daysLeft = getDaysLeft(c.end_date);
+                matchesExpiring = c.status === 'Active' && daysLeft >= 0 && daysLeft <= 30;
+            }
+
+            return matchesSearch && matchesStatus && matchesStart && matchesEnd && matchesExpiring;
+        });
+
+        // Apply Sorting
+        filtered.sort((a, b) => {
+            switch(sortSelect.value) {
+                case 'newest': return b.id - a.id;
+                case 'oldest': return a.id - b.id;
+                case 'name': return a.contract_name.localeCompare(b.contract_name);
+                case 'expiry': return new Date(a.end_date) - new Date(b.end_date);
+                default: return 0;
+            }
+        });
+
+        allContractsCached = filtered;
+        renderContracts(filtered);
+        updateStats(contracts); // Stats should usually reflect global state or filtered? Let's do global.
+    }
+
+    function renderContracts(contracts) {
+        contractsGrid.innerHTML = '';
+        if (contracts.length === 0) {
+            contractsGrid.innerHTML = `
+                <div class="empty-state">
+                    <img src="app/static/img/empty-state.png" alt="No contracts found">
+                    <h2>No contracts found</h2>
+                    <p>Try adjusting your search or filters, or create sample data to explore the dashboard.</p>
+                    <button class="btn btn-primary" id="seedBtn">
+                        <i class="fas fa-magic"></i> Create Sample Contracts
+                    </button>
+                </div>`;
+            document.getElementById('seedBtn').onclick = createSampleData;
             return;
         }
 
-        const headers = ['ID', 'Name', 'Party', 'Start Date', 'End Date', 'Status'];
-        const rows = allContracts.map(c => [
-            c.id,
-            `"${c.contract_name}"`,
-            `"${c.party_name}"`,
-            c.start_date,
-            c.end_date,
-            c.status,
-        ]);
-
-        const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href     = url;
-        a.download = `contracts_${new Date().toISOString().split('T')[0]}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
-
-        Toast.show('Exported successfully!', 'success');
-    };
-
-    // ── Fetch & Render Contracts ──────────────────────────────────────
-    async function fetchContracts() {
-        loadingSpinner.style.display = 'flex';
-        contractsGrid.innerHTML = '';
-
-        const params = new URLSearchParams({
-            search:        currentSearchQuery,
-            status:        currentStatusFilter,
-            expiring_soon: isExpiringSoonView,
-            sort_by:       sortSelect.value,
-            start_from:    startFrom.value,
-            end_to:        endTo.value,
-        });
-
-        try {
-            const res       = await fetch(`/contracts?${params}`);
-            const contracts = await res.json();
-
-            loadingSpinner.style.display = 'none';
-            allContracts = contracts;
-
-            if (contracts.length === 0) {
-                contractsGrid.innerHTML = `
-                    <div class="empty-state">
-                        <img src="/static/img/empty-state.png" alt="No contracts found">
-                        <h2>No contracts found</h2>
-                        <p>Try adjusting your search or filters, or create sample data to explore the dashboard.</p>
-                        <button class="btn btn-primary" onclick="createSampleData()">
-                            <i class="fas fa-magic"></i> Create Sample Contracts
-                        </button>
-                    </div>`;
-                return;
-            }
-
-            contracts.forEach(c => contractsGrid.appendChild(createContractCard(c)));
-        } catch (err) {
-            console.error(err);
-            loadingSpinner.style.display = 'none';
-            contractsGrid.innerHTML = '<p style="color:red;padding:2rem;">Failed to load contracts. Is the server running?</p>';
-        }
-    }
-
-    // ── Fetch Stats & Update Chart ────────────────────────────────────
-    async function fetchStats() {
-        try {
-            const res   = await fetch('/contracts/stats');
-            const stats = await res.json();
-
-            document.getElementById('statTotal').textContent    = stats.total;
-            document.getElementById('statActive').textContent   = stats.active;
-            document.getElementById('statExpiring').textContent = stats.expiring_soon;
-
-            updateChart(stats);
-        } catch (err) {
-            console.error('Failed to fetch stats:', err);
-        }
-    }
-
-    function updateChart(stats) {
-        const canvas = document.getElementById('statusChart');
-        if (!canvas) return;
-
-        if (statusChart) statusChart.destroy();
-
-        statusChart = new Chart(canvas.getContext('2d'), {
-            type: 'doughnut',
-            data: {
-                labels: ['Active', 'Expired'],
-                datasets: [{
-                    data: [stats.active, stats.expired],
-                    backgroundColor: ['#10B981', '#EF4444'],
-                    borderWidth: 0,
-                }],
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '72%',
-                animation: {
-                    animateScale: true,
-                    animateRotate: true,
-                    duration: 1000,
-                    easing: 'easeOutQuart'
-                },
-                plugins: { 
-                    legend: { display: false }, 
-                    tooltip: { 
-                        enabled: true,
-                        backgroundColor: '#111827',
-                        titleFont: { family: 'Outfit', size: 13 },
-                        bodyFont: { family: 'Outfit', size: 12 },
-                        padding: 10,
-                        cornerRadius: 8,
-                        displayColors: false
-                    } 
-                },
-            },
+        contracts.forEach(c => {
+            const card = createContractCard(c);
+            contractsGrid.appendChild(card);
         });
     }
 
-    // ── Contract Card ─────────────────────────────────────────────────
     function createContractCard(c) {
         const div = document.createElement('div');
         div.className = 'contract-card';
+        const daysLeft = getDaysLeft(c.end_date);
+        const isExpiringSoon = c.status === 'Active' && daysLeft >= 0 && daysLeft <= 30;
 
-        const expiryBadge = c.is_expiring_soon
-            ? `<span class="expiry-badge"><i class="fas fa-exclamation-triangle"></i> ${c.days_left}d left</span>`
+        const expiryBadge = isExpiringSoon
+            ? `<span class="expiry-badge"><i class="fas fa-exclamation-triangle"></i> ${daysLeft}d left</span>`
             : '';
 
         div.innerHTML = `
@@ -340,7 +299,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="card-actions">
                     <button class="btn-icon" title="Edit" onclick="openEditModal(${c.id})"><i class="fas fa-edit"></i></button>
                     <button class="btn-icon" title="Delete" onclick="deleteContract(${c.id})"><i class="fas fa-trash"></i></button>
-                    <button class="btn-icon" title="Preview PDF" onclick="openPdfViewer('${c.file_path}', '${escapeHtml(c.contract_name)}')"><i class="fas fa-file-pdf"></i></button>
+                    <button class="btn-icon" title="Preview PDF" onclick="openPdfViewer(${c.id})"><i class="fas fa-file-pdf"></i></button>
                 </div>
             </div>
             <div class="card-body">
@@ -350,9 +309,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span>→</span>
                     <span><i class="fas fa-calendar-check"></i> ${c.end_date}</span>
                 </div>
-                ${c.signature_path
+                ${c.signature_data
                     ? `<div class="signature-display"><small><i class="fas fa-pen-nib"></i> Signed</small>
-                       <img src="/static/${c.signature_path}" alt="Signature" style="height:30px;display:block;margin-top:4px;"></div>`
+                       <img src="${c.signature_data}" alt="Signature" style="height:30px;display:block;margin-top:4px;"></div>`
                     : `<div class="signature-prompt">
                        <button class="btn btn-secondary btn-small" onclick="openSignatureModal(${c.id})">
                            <i class="fas fa-pen"></i> Add Signature
@@ -362,50 +321,114 @@ document.addEventListener('DOMContentLoaded', () => {
         return div;
     }
 
-    function escapeHtml(str) {
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
+    // ── Stats Logic ───────────────────────────────────────────────────
+    function updateStats(all) {
+        const active = all.filter(c => c.status === 'Active').length;
+        const expired = all.filter(c => c.status === 'Expired').length;
+        const expiringSoon = all.filter(c => {
+            const daysLeft = getDaysLeft(c.end_date);
+            return c.status === 'Active' && daysLeft >= 0 && daysLeft <= 30;
+        }).length;
+
+        document.getElementById('statTotal').textContent    = all.length;
+        document.getElementById('statActive').textContent   = active;
+        document.getElementById('statExpiring').textContent = expiringSoon;
+
+        renderChart(active, expired);
     }
 
-    // ── Global Actions ────────────────────────────────────────────────
-    window.deleteContract = (id) => {
-        Confirm.show(
-            'Delete Contract',
-            'This will permanently delete the contract and its files. Are you sure?',
-            async () => {
-                try {
-                    const res = await fetch(`/contracts/${id}`, { method: 'DELETE' });
-                    if (res.ok) {
-                        fetchContracts();
-                        fetchStats();
-                        Toast.show('Contract deleted successfully', 'success');
-                    } else {
-                        Toast.show('Failed to delete contract', 'error');
-                    }
-                } catch (err) {
-                    console.error(err);
-                    Toast.show('An error occurred', 'error');
-                }
-            }
-        );
+    function renderChart(active, expired) {
+        const canvas = document.getElementById('statusChart');
+        if (!canvas) return;
+        if (statusChart) statusChart.destroy();
+
+        statusChart = new Chart(canvas.getContext('2d'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Active', 'Expired'],
+                datasets: [{
+                    data: [active || 0, expired || 0],
+                    backgroundColor: ['#10B981', '#EF4444'],
+                    borderWidth: 0,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '72%',
+                animation: { animateScale: true, animateRotate: true },
+                plugins: { legend: { display: false } },
+            },
+        });
+    }
+
+    // ── Helper Utilities ──────────────────────────────────────────────
+    function computeStatus(endDateStr) {
+        const end = new Date(endDateStr);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        return end >= today ? 'Active' : 'Expired';
+    }
+
+    function getDaysLeft(endDateStr) {
+        const end = new Date(endDateStr);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const diff = end - today;
+        return Math.floor(diff / (1000 * 60 * 60 * 24));
+    }
+
+    function escapeHtml(str) {
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // ── Export CSV ────────────────────────────────────────────────────
+    exportCsvBtn.onclick = () => {
+        if (allContractsCached.length === 0) {
+            Toast.show('No data to export', 'warning');
+            return;
+        }
+        const headers = ['ID', 'Name', 'Party', 'Start Date', 'End Date', 'Status'];
+        const rows = allContractsCached.map(c => [c.id, `"${c.contract_name}"`, `"${c.party_name}"`, c.start_date, c.end_date, c.status]);
+        const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url; a.download = `conbase_export_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        Toast.show('Exported successfully!', 'success');
     };
 
-    window.openEditModal = async (id) => {
-        try {
-            const res = await fetch(`/contracts/${id}`);
-            const c   = await res.json();
-            document.getElementById('editContractId').value = c.id;
-            document.getElementById('editName').value        = c.contract_name;
-            document.getElementById('editPartyName').value   = c.party_name;
-            document.getElementById('editStartDate').value   = c.start_date;
-            document.getElementById('editEndDate').value     = c.end_date;
-            openModal(editModal);
-        } catch (err) {
-            Toast.show('Failed to load contract details', 'error');
-        }
+    // ── PDF Viewer ────────────────────────────────────────────────────
+    window.openPdfViewer = (id) => {
+        const c = Storage.getAll().find(item => item.id == id);
+        if (!c) return;
+        pdfTitle.textContent = c.contract_name;
+        pdfFrame.src = c.file_data; // This is a Base64 string
+        pdfDownloadBtn.href = c.file_data;
+        pdfDownloadBtn.download = c.file_name || 'document.pdf';
+        openModal(pdfModal);
+    };
+
+    // ── Global Edit/Delete ─────────────────────────────────────────────
+    window.deleteContract = (id) => {
+        Confirm.show('Delete Contract', 'Are you sure you want to delete this contract?', () => {
+            Storage.delete(id);
+            refreshUI();
+            Toast.show('Contract deleted', 'success');
+        });
+    };
+
+    window.openEditModal = (id) => {
+        const c = Storage.getAll().find(item => item.id == id);
+        if (!c) return;
+        document.getElementById('editContractId').value = c.id;
+        document.getElementById('editName').value = c.contract_name;
+        document.getElementById('editPartyName').value = c.party_name;
+        document.getElementById('editStartDate').value = c.start_date;
+        document.getElementById('editEndDate').value = c.end_date;
+        openModal(editModal);
     };
 
     window.openSignatureModal = (id) => {
@@ -413,79 +436,56 @@ document.addEventListener('DOMContentLoaded', () => {
         openModal(document.getElementById('signatureModal'));
     };
 
-    // ── Toast Notification ────────────────────────────────────────────
+    // ── Toast & Confirm ───────────────────────────────────────────────
     window.Toast = {
         show(message, type = 'info') {
             const container = document.getElementById('toastContainer');
-            if (!container) return;
-
-            const iconMap = {
-                success: 'fa-check-circle',
-                error:   'fa-exclamation-circle',
-                warning: 'fa-exclamation-triangle',
-                info:    'fa-info-circle',
-            };
-
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
-            toast.innerHTML = `<i class="fas ${iconMap[type] || iconMap.info}"></i><span>${message}</span>`;
+            toast.innerHTML = `<span>${message}</span>`;
             container.appendChild(toast);
-
-            setTimeout(() => {
-                toast.classList.add('fade-out');
-                setTimeout(() => toast.remove(), 350);
-            }, 3500);
-        },
+            setTimeout(() => { toast.classList.add('fade-out'); setTimeout(() => toast.remove(), 350); }, 3000);
+        }
     };
 
-    // ── Confirm Dialog ────────────────────────────────────────────────
     window.Confirm = {
-        _cb:   null,
+        _cb: null,
         modal: document.getElementById('confirmModal'),
-
-        show(title, message, callback) {
-            this._cb = callback;
-            document.getElementById('confirmTitle').textContent   = title;
+        show(title, message, cb) {
+            this._cb = cb;
+            document.getElementById('confirmTitle').textContent = title;
             document.getElementById('confirmMessage').textContent = message;
             openModal(this.modal);
         },
-        hide() {
-            closeModal(this.modal);
-            this._cb = null;
-        },
+        hide() { closeModal(this.modal); this._cb = null; }
     };
-
     document.getElementById('confirmCancelBtn').onclick = () => Confirm.hide();
-    document.getElementById('confirmOkBtn').onclick = () => {
-        if (Confirm._cb) Confirm._cb();
-        Confirm.hide();
-    };
+    document.getElementById('confirmOkBtn').onclick = () => { if(Confirm._cb) Confirm._cb(); Confirm.hide(); };
 
-    // ── PDF Viewer Logic ──
-    window.openPdfViewer = (filePath, name) => {
-        const fullUrl = `/static/${filePath}`;
-        pdfTitle.textContent = name;
-        pdfFrame.src = fullUrl;
-        pdfDownloadBtn.href = fullUrl;
-        pdfDownloadBtn.download = name.endsWith('.pdf') ? name : `${name}.pdf`;
-        openModal(pdfModal);
-    };
+    // ── Seeding ───────────────────────────────────────────────────────
+    function createSampleData() {
+        Toast.show('Generating static sample data...', 'info');
+        // Very minimal 1-pixel PDF Base64 string for demo purposes
+        const samplePdf = 'data:application/pdf;base64,JVBERi0xLjcKWrO8u7q8Ci0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0KMSAwIG9iagogIDw8IC9UeXBlIC9DYXRhbG9nIC9QYWdlcyAyIDAgUiA+PgplbmRvYmoKMiAwIG9iagogIDw8IC9UeXBlIC9QYWdlcyAvS2lkcyBbMyAwIFJdIC9Db3VudCAxID4+CmVuZG9iagozIDAgb2JqCiAgPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvUmVzb3VyY2VzIDw8ID4+IC9Db250ZW50cyA0IDAgUiA+PgplbmRvYmoKNCAwIG9iagogIDw8IC9MZW5ndGggNTEgPj4Kc3RyZWFtCkJUCiAgL0YxIDI0IFRmCiAgNzIgNzIwIFRkCiAgKFNhbXBsZSBDb250cmFjdCBEb2N1bWVudCAtIENPTkJBU0UpIFRqCkVUCmVuZHN0cmVhbQplbmRvYmoKeHJlZgowIDUKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDE1IDAwMDAwIG4gCjAwMDAwMDAwNjAgMDAwMDAgbiAKMDAwMDAwMDExMiAwMDAwMCBuIAowMDAwMDAwMjM1IDAwMDAwIG4gCnRyYWlsZXIKICA8PCAvU2l6ZSA1IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgozMzgKJSVFT0Y=';
+        
+        const samples = [
+            { contract_name: 'Software License Agreement', party_name: 'TechFlow Inc.', start_date: '2025-01-01', end_date: '2026-12-31', file_data: samplePdf, file_name: 'license.pdf', status: 'Active', signature_data: null },
+            { contract_name: 'Office Lease 2025', party_name: 'MainStreet Properties', start_date: '2024-06-01', end_date: '2025-05-31', file_data: samplePdf, file_name: 'lease.pdf', status: 'Active', signature_data: null },
+            { contract_name: 'Consulting Services SOP', party_name: 'Strategy Partners', start_date: '2023-01-01', end_date: '2024-01-01', file_data: samplePdf, file_name: 'sop.pdf', status: 'Expired', signature_data: null }
+        ];
 
-    // ── Demo Seeding Logic ──
-    window.createSampleData = async () => {
-        Toast.show('Creating sample data...', 'info');
-        try {
-            const res = await fetch('/contracts/seed', { method: 'POST' });
-            if (res.ok) {
-                Toast.show('Sample contracts created!', 'success');
-                fetchContracts();
-                fetchStats();
-            } else {
-                Toast.show('Failed to seed data', 'error');
-            }
-        } catch (err) {
-            console.error(err);
-            Toast.show('An error occurred during seeding', 'error');
+        samples.forEach(s => Storage.add(s));
+        refreshUI();
+        Toast.show('Sample data ready!', 'success');
+    }
+    
+    // Externalize for signature.js
+    window.onSignatureCaptured = (base64) => {
+        if (window.currentSigningId) {
+            Storage.update(window.currentSigningId, { signature_data: base64 });
+            refreshUI();
+            closeModal(document.getElementById('signatureModal'));
+            Toast.show('Signature applied!', 'success');
         }
     };
 });
