@@ -78,11 +78,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const dataURL = canvas.toDataURL('image/png');
-        if (window.onSignatureCaptured) {
-            window.onSignatureCaptured(dataURL);
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-        } else {
-            console.error('onSignatureCaptured callback not found');
+        const blob = await (await fetch(dataURL)).blob();
+        const formData = new FormData();
+        formData.append('signature', blob, 'signature.png');
+
+        try {
+            const res = await fetch(`/contracts/${window.currentSigningId}/signature`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (res.ok) {
+                document.getElementById('signatureModal').classList.remove('active');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                Toast.show('Signature applied successfully!', 'success');
+                // Trigger refresh if main.js functions are available
+                location.reload(); 
+            } else {
+                const data = await res.json();
+                Toast.show(data.error || 'Failed to save signature', 'error');
+            }
+        } catch (err) {
+            console.error(err);
             Toast.show('An error occurred while saving signature', 'error');
         }
     };
