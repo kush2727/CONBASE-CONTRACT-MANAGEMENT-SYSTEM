@@ -37,9 +37,12 @@
         <!-- Main Content -->
         <main class="main-content">
             <header class="top-bar">
+                <button class="mobile-menu-btn" id="mobileMenuBtn">
+                    <i class="fas fa-bars"></i>
+                </button>
                 <div class="search-bar">
                     <i class="fas fa-search"></i>
-                    <input type="text" id="searchInput" placeholder="Search contracts or parties...">
+                    <input type="text" id="searchInput" placeholder="Search...">
                 </div>
                 <div class="header-filters">
                     <select id="sortSelect" class="input-small">
@@ -255,6 +258,7 @@
 
     <!-- Toast Container -->
     <div id="toastContainer" class="toast-container"></div>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script src="{{ url_for('static', filename='js/signature.js') }}"></script>

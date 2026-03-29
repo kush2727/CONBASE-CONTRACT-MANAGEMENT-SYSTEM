@@ -867,3 +867,115 @@ select:focus {
         opacity: 1;
     }
 }
+
+/* ─── Mobile Responsiveness ───────────────────────────────────── */
+.mobile-menu-btn {
+    display: none;
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    cursor: pointer;
+    font-size: 1.1rem;
+    color: var(--text-main);
+}
+
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 1000;
+}
+
+.sidebar-overlay.active {
+    display: block;
+}
+
+@media (max-width: 1024px) {
+    .stats-overview {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .sidebar {
+        position: fixed;
+        left: -240px;
+        top: 0;
+        bottom: 0;
+        z-index: 1001;
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+    }
+
+    .sidebar.active {
+        transform: translateX(240px);
+    }
+
+    .main-content {
+        padding: 1rem;
+    }
+
+    .mobile-menu-btn {
+        display: flex;
+    }
+
+    .top-bar {
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+    }
+
+    .header-filters {
+        display: none; /* Hide secondary filters on mobile for clarity */
+    }
+
+    .stats-overview {
+        grid-template-columns: 1fr;
+    }
+
+    .analytics-card {
+        padding: 1.25rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .header-actions {
+        width: 100%;
+        gap: 0.5rem;
+    }
+
+    .header-actions button {
+        flex: 1;
+        justify-content: center;
+        padding: 0.6rem 0.5rem;
+        font-size: 0.75rem;
+    }
+
+    .header-actions button i {
+        font-size: 1rem;
+    }
+
+    #exportCsvBtn span {
+        display: none; /* Hide text on very small screens */
+    }
+
+    .contracts-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .modal-content {
+        padding: 1.25rem;
+        max-width: 100%;
+        border-radius: 0;
+        min-height: 100vh;
+        margin: 0;
+    }
+
+    .modal {
+        padding: 0;
+    }
+}

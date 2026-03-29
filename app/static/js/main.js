@@ -22,6 +22,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const pdfFrame        = document.getElementById('pdfFrame');
     const pdfTitle        = document.getElementById('pdfTitle');
     const pdfDownloadBtn  = document.getElementById('pdfDownloadBtn');
+    const mobileMenuBtn   = document.getElementById('mobileMenuBtn');
+    const sidebar         = document.querySelector('.sidebar');
+    const sidebarOverlay  = document.getElementById('sidebarOverlay');
 
     // ── State ────────────────────────────────────────────────────────
     let currentStatusFilter = '';
@@ -38,6 +41,21 @@ document.addEventListener('DOMContentLoaded', () => {
     function openModal(modal)  { modal.classList.add('active'); }
     function closeModal(modal) { modal.classList.remove('active'); }
 
+    // ── Mobile Navigation ─────────────────────────────────────────────
+    if (mobileMenuBtn) {
+        mobileMenuBtn.onclick = () => {
+            sidebar.classList.toggle('active');
+            sidebarOverlay.classList.toggle('active');
+        };
+    }
+
+    if (sidebarOverlay) {
+        sidebarOverlay.onclick = () => {
+            sidebar.classList.remove('active');
+            sidebarOverlay.classList.remove('active');
+        };
+    }
+
     document.querySelectorAll('.close-btn').forEach(btn => {
         btn.onclick = () => {
             document.querySelectorAll('.modal').forEach(m => closeModal(m));
@@ -53,6 +71,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('navDashboard').onclick = (e) => {
         e.preventDefault();
         setActiveNav(e.currentTarget);
+        sidebar.classList.remove('active');
+        sidebarOverlay.classList.remove('active');
         currentStatusFilter = '';
         isExpiringSoonView  = false;
         viewTitle.textContent = 'Contract Dashboard';
@@ -62,6 +82,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('navAllContracts').onclick = (e) => {
         e.preventDefault();
         setActiveNav(e.currentTarget);
+        sidebar.classList.remove('active');
+        sidebarOverlay.classList.remove('active');
         currentStatusFilter = '';
         isExpiringSoonView  = false;
         viewTitle.textContent = 'All Contracts';
@@ -71,6 +93,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('navExpiringSoon').onclick = (e) => {
         e.preventDefault();
         setActiveNav(e.currentTarget);
+        sidebar.classList.remove('active');
+        sidebarOverlay.classList.remove('active');
         currentStatusFilter = 'Active';
         isExpiringSoonView  = true;
         viewTitle.textContent = 'Contracts Expiring Soon';
