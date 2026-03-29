@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CONBASE | Management System</title>
+    <meta name="description" content="A professional contract management system to upload, track, sign, and export your contracts.">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <i class="fas fa-file-contract"></i>
+                <span>CONBASE</span>
+            </div>
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" id="navDashboard"><i class="fas fa-chart-line"></i> Dashboard</a>
+                <a href="#" class="nav-item" id="navAllContracts"><i class="fas fa-file-alt"></i> All Contracts</a>
+                <a href="#" class="nav-item" id="navExpiringSoon"><i class="fas fa-clock"></i> Expiring Soon</a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <div class="avatar">K</div>
+                    <div class="details">
+                        <span class="name">Kushwanth Sai</span>
+                        <span class="role">Administrator</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="search-bar">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="searchInput" placeholder="Search contracts or parties...">
+                </div>
+                <div class="header-filters">
+                    <select id="sortSelect" class="input-small">
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="name">Name (A-Z)</option>
+                        <option value="expiry">Expiry (Soonest)</option>
+                    </select>
+                    <div class="top-bar-divider"></div>
+                    <div class="date-range">
+                        <input type="date" id="startFrom" title="Start From">
+                        <span>to</span>
+                        <input type="date" id="endTo" title="End To">
+                    </div>
+                </div>
+                <div class="top-bar-divider"></div>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" id="exportCsvBtn">
+                        <i class="fas fa-file-csv"></i> Export CSV
+                    </button>
+                    <button class="btn btn-primary" id="openUploadBtn">
+                        <i class="fas fa-plus"></i> New Contract
+                    </button>
+                </div>
+            </header>
+
+            <!-- Stats Overview -->
+            <section class="stats-overview">
+                <div class="stat-card">
+                    <div class="stat-icon total"><i class="fas fa-file-signature"></i></div>
+                    <div class="stat-details">
+                        <span class="stat-value" id="statTotal">-</span>
+                        <span class="stat-label">Total</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon active"><i class="fas fa-check-circle"></i></div>
+                    <div class="stat-details">
+                        <span class="stat-value" id="statActive">-</span>
+                        <span class="stat-label">Active</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon expiring"><i class="fas fa-hourglass-half"></i></div>
+                    <div class="stat-details">
+                        <span class="stat-value" id="statExpiring">-</span>
+                        <span class="stat-label">Expiring Soon</span>
+                    </div>
+                </div>
+                <div class="analytics-card">
+                    <div class="analytics-inner">
+                        <canvas id="statusChart"></canvas>
+                        <span class="analytics-label">Status</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Dashboard Header -->
+            <section class="dashboard-header">
+                <h1 id="viewTitle">Contract Dashboard</h1>
+                <div class="filters">
+                    <button class="filter-btn active" data-status="">All</button>
+                    <button class="filter-btn" data-status="Active">Active</button>
+                    <button class="filter-btn" data-status="Expired">Expired</button>
+                </div>
+            </section>
+
+            <!-- Contracts Grid -->
+            <div class="contracts-container">
+                <div class="loading-spinner" id="loadingSpinner">
+                    <div class="spinner"></div>
+                </div>
+                <div class="contracts-grid" id="contractsGrid"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Upload Modal -->
+    <div class="modal" id="uploadModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Upload New Contract</h2>
+                <button class="close-btn">&times;</button>
+            </div>
+            <form id="uploadForm">
+                <div class="form-group">
+                    <label>Contract Name</label>
+                    <input type="text" name="contract_name" required placeholder="e.g. Service Agreement 2025">
+                </div>
+                <div class="form-group">
+                    <label>Party Name</label>
+                    <input type="text" name="party_name" required placeholder="e.g. Acme Corp">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Start Date</label>
+                        <input type="date" name="start_date" required>
+                    </div>
+                    <div class="form-group">
+                        <label>End Date</label>
+                        <input type="date" name="end_date" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Contract Document (PDF/DOC)</label>
+                    <div class="file-drop-zone" id="dropZone">
+                        <input type="file" name="file" id="fileInput" accept=".pdf,.doc,.docx" hidden required>
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <p>Drag &amp; drop or <span>browse</span></p>
+                        <small id="fileNameDisplay"></small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary close-btn">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Contract</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal" id="editModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Contract</h2>
+                <button class="close-btn">&times;</button>
+            </div>
+            <form id="editForm">
+                <input type="hidden" id="editContractId">
+                <div class="form-group">
+                    <label>Contract Name</label>
+                    <input type="text" id="editName" required>
+                </div>
+                <div class="form-group">
+                    <label>Party Name</label>
+                    <input type="text" id="editPartyName" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Start Date</label>
+                        <input type="date" id="editStartDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label>End Date</label>
+                        <input type="date" id="editEndDate" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary close-btn">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Signature Modal -->
+    <div class="modal" id="signatureModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add eSignature</h2>
+                <button class="close-btn">&times;</button>
+            </div>
+            <div class="signature-container">
+                <p>Please sign within the box below:</p>
+                <div class="canvas-wrapper">
+                    <canvas id="signatureCanvas" width="500" height="200"></canvas>
+                </div>
+                <div class="signature-actions">
+                    <button class="btn btn-secondary" id="clearBtn">Clear</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary close-btn">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveSignatureBtn">Apply Signature</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal" id="confirmModal">
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h2 id="confirmTitle">Confirm Action</h2>
+            </div>
+            <div class="modal-body">
+                <p id="confirmMessage">Are you sure you want to proceed?</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="confirmCancelBtn">Cancel</button>
+                <button class="btn btn-danger" id="confirmOkBtn">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PDF Viewer Modal -->
+    <div class="modal" id="pdfModal">
+        <div class="modal-content modal-full">
+            <div class="modal-header">
+                <h2 id="pdfTitle">Document Preview</h2>
+                <button class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body" style="height: 70vh; padding: 0;">
+                <iframe id="pdfFrame" src="" width="100%" height="100%" frameborder="0"></iframe>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary close-btn">Close Preview</button>
+                <a id="pdfDownloadBtn" href="" download class="btn btn-primary">
+                    <i class="fas fa-download"></i> Download PDF
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/signature.js') }}"></script>
+</body>
+</html>
